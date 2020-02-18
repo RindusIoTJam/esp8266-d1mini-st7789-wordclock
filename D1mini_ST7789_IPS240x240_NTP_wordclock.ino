@@ -91,24 +91,20 @@ word ConvertRGB( byte R, byte G, byte B) {
 const word low_color  = ConvertRGB(25,25,25);
 
 //const word high_color = ST77XX_GREEN;
-//const word high_color = ConvertRGB(255,255,255);
-const word high_color = ST77XX_WHITE;
+//const word high_color = ST77XX_CYAN;
+const word high_color = ConvertRGB(173,194,0); // rindus
 
 void ICACHE_RAM_ATTR inline ISR_timer0() {
   update_display = true;
-  timer0_write(ESP.getCycleCount() + (60*80000000L)); // 60*80M/80M = 60*1s = 60s
+  timer0_write(ESP.getCycleCount() + (20*80000000L)); // 20*80M/80M = 20*1s = 20s
 }
 
 void configModeCallback (WiFiManager *myWiFiManager) {
   if(boot) {
-    tft.print("ConfigMode...");
-  }
-}
-
-//callback notifying us of the need to save config
-void saveConfigCallback () {
-  if(boot) {
-    tft.print("Connected...");
+    tft.setTextColor(ST77XX_RED);
+    tft.print("AP");
+    tft.setTextColor(ST77XX_WHITE);
+    tft.print("...");
   }
 }
 
@@ -128,7 +124,16 @@ void setup(void) {
   tft.setRotation(2);
   tft.fillScreen(ST77XX_BLACK);
   digitalWrite(D0, 1); // TFT Backlight on
-  tft.println("booting...");
+  tft.println("#################################");
+  tft.println("#                               #");
+  tft.print("#  WordClock by ");
+  tft.setTextColor(high_color);
+  tft.print("rindus");
+  tft.setTextColor(ST77XX_WHITE);
+  tft.println(" IoT Jam  #");
+  tft.println("#                               #");
+  tft.println("#################################");
+  tft.println("");
   noInterrupts();
     // interupt setup
     timer0_isr_init();
@@ -136,25 +141,29 @@ void setup(void) {
     timer0_write(ESP.getCycleCount() + 2* 80000000L); // start in 2s (2*80M/80M=2s)
   interrupts();
 
-  tft.print(":WiFi...");
+  tft.print("WiFi...");
   wifiManager.setAPCallback(configModeCallback);
-  wifiManager.setSaveConfigCallback(saveConfigCallback);
   wifiManager.setDebugOutput(false);
-  wifiManager.autoConnect("Qlock2");
+  wifiManager.autoConnect("QlockTwo");
+  tft.setTextColor(ST77XX_GREEN);
   tft.println("done");
+  tft.setTextColor(ST77XX_WHITE);
+  
   WiFi.mode(WIFI_STA); // Ensure AP is off  
 
   if (WiFi.status() == WL_CONNECTED) {
     char buf[9];
-    tft.print(":NTP...");
+    tft.print("NTP...");
     timeClient.begin();
     timeClient.forceUpdate();
     timeClient.getFormattedTime().toCharArray(buf, 9);
     buf[5]=0; // remove :ss
+    tft.setTextColor(ST77XX_GREEN);
     tft.println(buf);
+    tft.setTextColor(ST77XX_WHITE);
   }
   tft.println("done");
-  delay(1000);
+  delay(2500);
   clockface();
   boot = false;
 }
@@ -182,6 +191,7 @@ void clockface() {
 void setColor(int s_line, int s_char, int e_char, word color) {
   for(;s_char<=e_char;s_char++) {
     tft.drawChar(4+(s_char*xAdv), (s_line*yAdv)-8, line[s_line-1][s_char], color, 0x0000, 1);
+    delay(80);
   }
 }
 
@@ -191,15 +201,15 @@ void loop() {
   } else {
     digitalWrite(LED_BUILTIN, 0); // alarm LED on
     Serial.println("ERROR: WiFi not connected!");
-    delay(3);
+    delay(2);
     digitalWrite(LED_BUILTIN, 1); // alarm LED off
-    delay(197);
+    delay(498);
   }
 
   if( update_display ) {
     update_display = false;
 
-    int minutes = timeClient.getMinutes()+1;
+    int minutes = timeClient.getMinutes();
     minutes = minutes - (minutes % 5);
 
     int hours = timeClient.getHours();
@@ -210,20 +220,6 @@ void loop() {
     Serial.print(":");
     Serial.println(minutes, DEC);
 
-    if(minutes==0||minutes==60) {
-      setColor(3,6,9,low_color);    // five
-      setColor(4,9,10,low_color);   // to
-      setColor(5,0,3,low_color);    // past
-      setColor(10,5,10,high_color); // OCLOCK
-    } else {
-      if(minutes>30) {
-        setColor(5,0,3,low_color);   // past
-        setColor(4,9,10,high_color); // TO
-      } else {
-        setColor(10,5,10,low_color); // oclock
-        setColor(5,0,3,high_color);  // PAST
-      }
-    }
     if(minutes==5) {
       setColor(10,5,10,low_color);  // oclock
       setColor(3,6,9,high_color);   // FIVE
@@ -243,7 +239,7 @@ void loop() {
       setColor(3,0,5,high_color);   // TWENTY
     }
     if(minutes==25) {
-      setColor(3,0,5,low_color);    // twenty
+      //setColor(3,0,5,low_color);    // twenty
       setColor(3,0,9,high_color);   // TWENTYFIVE
     }
     if(minutes==30) {
@@ -255,7 +251,7 @@ void loop() {
       setColor(3,0,9,high_color);   // TWENTYFIVE
     }
     if(minutes==40) {
-      setColor(3,0,9,low_color);    // twentyfive
+      setColor(3,6,9,low_color);    //       five
       setColor(3,0,5,high_color);   // TWENTY
     }
     if(minutes==45) {
@@ -271,6 +267,21 @@ void loop() {
     if(minutes==55) {
       setColor(4,5,7,low_color);    // ten
       setColor(3,6,9,high_color);   // FIVE
+    }
+
+    if(minutes==0||minutes==60) {
+      setColor(3,6,9,low_color);    // five
+      setColor(4,9,10,low_color);   // to
+      setColor(5,0,3,low_color);    // past
+      setColor(10,5,10,high_color); // OCLOCK
+    } else {
+      if(minutes>30) {
+        setColor(5,0,3,low_color);   // past
+        setColor(4,9,10,high_color); // TO
+      } else {
+        setColor(10,5,10,low_color); // oclock
+        setColor(5,0,3,high_color);  // PAST
+      }
     }
     
     if(hours==1) {
@@ -317,7 +328,7 @@ void loop() {
       setColor(10,0,2,low_color);   // ten
       setColor(8,5,10,high_color);  // ELEVEN
     }
-    if(hours==0||hours==12) {
+    if(hours==12) {
       setColor(8,5,10,low_color);   // eleven
       setColor(9,5,10,high_color);  // TWELVE
     }

@@ -52,6 +52,7 @@ WiFiUDP     ntpUDP;
 // update interval (in milliseconds, can be changed using setUpdateInterval() ).
 NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60*60*1000);
 
+int boot = true;
 volatile int update_display = true;
 
 char *line[] = {
@@ -91,25 +92,33 @@ const word low_color  = ConvertRGB(25,25,25);
 
 //const word high_color = ST77XX_GREEN;
 //const word high_color = ConvertRGB(255,255,255);
-const word high_color = ST77XX_MAGENTA;
+const word high_color = ST77XX_WHITE;
 
 void ICACHE_RAM_ATTR inline ISR_timer0() {
   update_display = true;
-  timer0_write(ESP.getCycleCount() + (30*80000000L)); // 30*80M/80M = 30*1s = 30s
+  timer0_write(ESP.getCycleCount() + (60*80000000L)); // 60*80M/80M = 60*1s = 60s
 }
 
 void configModeCallback (WiFiManager *myWiFiManager) {
-  tft.print("ConfigMode...");
+  if(boot) {
+    tft.print("ConfigMode...");
+  }
 }
 
 //callback notifying us of the need to save config
 void saveConfigCallback () {
-  tft.print("Connected...");
+  if(boot) {
+    tft.print("Connected...");
+  }
 }
 
 void setup(void) {
-  pinMode(D0, OUTPUT);
-  digitalWrite(D0, 0);
+  pinMode(D0,          OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
+  
+  digitalWrite(D0,          0); // TFT Backlight off
+  digitalWrite(LED_BUILTIN, 1); // alarm LED off
+
   Serial.begin(9600);
 
   // if the display has CS pin try with SPI_MODE0
@@ -118,13 +127,13 @@ void setup(void) {
   // if the screen is flipped, remove this command
   tft.setRotation(2);
   tft.fillScreen(ST77XX_BLACK);
-  digitalWrite(D0, 1);
+  digitalWrite(D0, 1); // TFT Backlight on
   tft.println("booting...");
   noInterrupts();
     // interupt setup
     timer0_isr_init();
     timer0_attachInterrupt(ISR_timer0);
-    timer0_write(ESP.getCycleCount() + 80000000L); // start in 1s (80M/80M=1s)
+    timer0_write(ESP.getCycleCount() + 2* 80000000L); // start in 2s (2*80M/80M=2s)
   interrupts();
 
   tft.print(":WiFi...");
@@ -147,6 +156,7 @@ void setup(void) {
   tft.println("done");
   delay(1000);
   clockface();
+  boot = false;
 }
 
 void clockface() {
@@ -179,15 +189,17 @@ void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     timeClient.update();
   } else {
+    digitalWrite(LED_BUILTIN, 0); // alarm LED on
     Serial.println("ERROR: WiFi not connected!");
-    wifiManager.setConnectTimeout(60);
-    wifiManager.autoConnect("Qlock2");
+    delay(3);
+    digitalWrite(LED_BUILTIN, 1); // alarm LED off
+    delay(197);
   }
 
   if( update_display ) {
     update_display = false;
 
-    int minutes = timeClient.getMinutes()+2;
+    int minutes = timeClient.getMinutes()+1;
     minutes = minutes - (minutes % 5);
 
     int hours = timeClient.getHours();

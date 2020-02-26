@@ -73,7 +73,9 @@ char *line[] = {
 #define ST77XX_GRAY     0x8410
 #define ST77XX_WHITE    0xFFFF
 #define ST77XX_RED      0xF800
+#ifndef ST77XX_ORANGE
 #define ST77XX_ORANGE   0xFA60
+#endif
 #define ST77XX_YELLOW   0xFFE0 
 #define ST77XX_LIME     0x07FF
 #define ST77XX_GREEN    0x07E0
@@ -108,6 +110,33 @@ void configModeCallback (WiFiManager *myWiFiManager) {
   }
 }
 
+void setColor(int s_line, int s_char, int e_char, word color) {
+  for(;s_char<=e_char;s_char++) {
+    tft.drawChar(4+(s_char*xAdv), (s_line*yAdv)-8, line[s_line-1][s_char], color, 0x0000, 1);
+    delay(80);
+  }
+}
+
+void clockface() {
+  tft.fillScreen(ST77XX_BLACK);
+  tft.setFont(font);
+
+  for(int l=1;l<=10;l++) {
+    for(int c=0;c<11;c++) {
+      tft.drawChar(4+(c*xAdv), (l*yAdv)-8, line[l-1][c], low_color, 0x0000, 1);
+    }
+  }
+
+  for(int l=1;l<=10;l++) {
+    for(int c=0;c<11;c++) {
+      tft.drawChar(4+(c*xAdv), (l*yAdv)-8, line[l-1][c], low_color, 0x0000, 1);
+    }
+  }
+
+  setColor(1,0,1,high_color); // IT
+  setColor(1,3,4,high_color); // IS
+}
+
 void setup(void) {
   pinMode(D0,          OUTPUT);
   pinMode(LED_BUILTIN, OUTPUT);
@@ -115,7 +144,7 @@ void setup(void) {
   digitalWrite(D0,          0); // TFT Backlight off
   digitalWrite(LED_BUILTIN, 1); // alarm LED off
 
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   // if the display has CS pin try with SPI_MODE0
   tft.init(240, 240, SPI_MODE2);    // Init ST7789 display 240x240 pixel
@@ -124,16 +153,18 @@ void setup(void) {
   tft.setRotation(2);
   tft.fillScreen(ST77XX_BLACK);
   digitalWrite(D0, 1); // TFT Backlight on
-  tft.println("#################################");
-  tft.println("#                               #");
-  tft.print("#  WordClock by ");
+
+  tft.println("   #################################");
+  tft.println("   #                               #");
+  tft.print("   #  WordClock by ");
   tft.setTextColor(high_color);
   tft.print("rindus");
   tft.setTextColor(ST77XX_WHITE);
   tft.println(" IoT Jam  #");
-  tft.println("#                               #");
-  tft.println("#################################");
+  tft.println("   #                               #");
+  tft.println("   #################################");
   tft.println("");
+
   noInterrupts();
     // interupt setup
     timer0_isr_init();
@@ -166,33 +197,6 @@ void setup(void) {
   delay(2500);
   clockface();
   boot = false;
-}
-
-void clockface() {
-  tft.fillScreen(ST77XX_BLACK);
-  tft.setFont(font);
-
-  for(int l=1;l<=10;l++) {
-    for(int c=0;c<11;c++) {
-      tft.drawChar(4+(c*xAdv), (l*yAdv)-8, line[l-1][c], low_color, 0x0000, 1);
-    }
-  }
-
-  for(int l=1;l<=10;l++) {
-    for(int c=0;c<11;c++) {
-      tft.drawChar(4+(c*xAdv), (l*yAdv)-8, line[l-1][c], low_color, 0x0000, 1);
-    }
-  }
-
-  setColor(1,0,1,high_color); // IT
-  setColor(1,3,4,high_color); // IS
-}
-
-void setColor(int s_line, int s_char, int e_char, word color) {
-  for(;s_char<=e_char;s_char++) {
-    tft.drawChar(4+(s_char*xAdv), (s_line*yAdv)-8, line[s_line-1][s_char], color, 0x0000, 1);
-    delay(80);
-  }
 }
 
 void loop() {
@@ -328,7 +332,7 @@ void loop() {
       setColor(10,0,2,low_color);   // ten
       setColor(8,5,10,high_color);  // ELEVEN
     }
-    if(hours==12) {
+    if((hours==0)|(hours==12)) {
       setColor(8,5,10,low_color);   // eleven
       setColor(9,5,10,high_color);  // TWELVE
     }

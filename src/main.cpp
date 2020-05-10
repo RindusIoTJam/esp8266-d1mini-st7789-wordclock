@@ -7,6 +7,11 @@
 #include <ESP8266WebServer.h>     //Local WebServer used to serve the configuration portal
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager WiFi Configuration Magic
 #include <WiFiUdp.h>
+#include <Timezone.h>             // https://github.com/JChristensen/Timezone
+
+#include <IRrecv.h>
+#include <IRremoteESP8266.h>
+#include <IRutils.h>
 
 #include <Adafruit_GFX.h>    // Core graphics library
 #include <Adafruit_ST7789.h> // Hardware-specific library for ST7789
@@ -36,6 +41,10 @@ const uint8_t yAdv  = 24;
     
     FreeSerif9pt7b       5..17     22           */
 
+#ifndef DEBUG
+#define DEBUG
+#endif
+
 // ST7789 TFT module connections
 #define TFT_DC    D1     // TFT DC  pin is connected to NodeMCU pin D1 (GPIO5)
 #define TFT_RST   D2     // TFT RST pin is connected to NodeMCU pin D2 (GPIO4)
@@ -50,9 +59,25 @@ WiFiUDP     ntpUDP;
 // You can specify the time server pool and the offset (in seconds, can be
 // changed later with setTimeOffset() ). Additionaly you can specify the
 // update interval (in milliseconds, can be changed using setUpdateInterval() ).
-NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60*60*1000);
+NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 0, 60*60*1000);
+
+// West Europe Time Zone (Madrid)
+TimeChangeRule    *tcr;  //pointer to the time change rule, use to get TZ abbrev
+TimeChangeRule    ceDST = {"CEST", Last, Sun, Mar, 2, 120};  //Daylight time = UTC + 2 hours
+TimeChangeRule    ceSTD = {"CET",  Last, Sun, Oct, 3,  60};  //Standard time = UTC + 1 hours
+Timezone          ceTZ(ceDST, ceSTD);
+
+const uint16_t kRecvPin = D3;
+const uint16_t kCaptureBufferSize = 1024;
+const uint8_t  kTimeout = 50;  // Milli-Seconds
+
+// The IR receiver.
+IRrecv irrecv(kRecvPin, kCaptureBufferSize, kTimeout, false);
+// Somewhere to store the captured message.
+decode_results results;
 
 int boot = true;
+int do_chime = false;
 volatile int update_display = true;
 
 char *line[] = {
@@ -94,7 +119,7 @@ const word low_color  = ConvertRGB(25,25,25);
 
 //const word high_color = ST77XX_GREEN;
 //const word high_color = ST77XX_CYAN;
-const word high_color = ConvertRGB(173,194,0); // rindus
+word high_color = ConvertRGB(173,194,0); // rindus
 
 void ICACHE_RAM_ATTR inline ISR_timer0() {
   update_display = true;
@@ -138,13 +163,15 @@ void clockface() {
 }
 
 void setup(void) {
+  Serial.begin(115200);
+  while(!Serial){}
+  Serial.println("Start...");
+
   pinMode(D0,          OUTPUT);
   pinMode(LED_BUILTIN, OUTPUT);
-  
+
   digitalWrite(D0,          0); // TFT Backlight off
   digitalWrite(LED_BUILTIN, 1); // alarm LED off
-
-  Serial.begin(115200);
 
   // if the display has CS pin try with SPI_MODE0
   tft.init(240, 240, SPI_MODE2);    // Init ST7789 display 240x240 pixel
@@ -184,7 +211,7 @@ void setup(void) {
 
   if (WiFi.status() == WL_CONNECTED) {
     char buf[9];
-    tft.print("NTP...");
+    tft.print("UTC...");
     timeClient.begin();
     timeClient.forceUpdate();
     timeClient.getFormattedTime().toCharArray(buf, 9);
@@ -197,6 +224,8 @@ void setup(void) {
   delay(2500);
   clockface();
   boot = false;
+
+  irrecv.enableIRIn();  // Start up the IR receiver.
 }
 
 void loop() {
@@ -210,19 +239,39 @@ void loop() {
     delay(498);
   }
 
+  // Check if an IR message has been received.
+  if (irrecv.decode(&results)) {  // We have captured something.
+    Serial.print("IRRECV: ");
+    Serial.println(resultToHexidecimal(&results));
+
+    String strIR = resultToHexidecimal(&results);
+    
+    if(     strIR.equals("0xFFA857")) { high_color = ST77XX_WHITE; }
+    else if(strIR.equals("0xFF9867")) { high_color = ST77XX_RED;   }
+    else if(strIR.equals("0xFFD827")) { high_color = ST77XX_GREEN; }
+    else if(strIR.equals("0xFF8877")) { high_color = ST77XX_BLUE;  }
+    else if(strIR.equals("0xFF48B7")) { high_color = ConvertRGB(173,194,0); } // rindus
+    else if(strIR.equals("0xFFB04F")) { digitalWrite(D0, true);    }          // TFT Backlight on
+    else if(strIR.equals("0xFFF807")) { digitalWrite(D0, false);   }          // TFT Backlight off
+    
+    irrecv.resume();
+    
+    setColor(1,0,1,high_color); // IT
+    setColor(1,3,4,high_color); // IS
+    update_display = true;
+  }
+
   if( update_display ) {
     update_display = false;
 
-    int minutes = timeClient.getMinutes();
+    time_t t = ceTZ.toLocal(timeClient.getEpochTime(), &tcr);
+
+    int minutes = minute(t);
     minutes = minutes - (minutes % 5);
 
-    int hours = timeClient.getHours();
+    int hours = hour(t);
     if(hours>12)    { hours = hours-12; }
     if(minutes>=35) { ++hours; }
-
-    Serial.print(hours, DEC);
-    Serial.print(":");
-    Serial.println(minutes, DEC);
 
     if(minutes==5) {
       setColor(10,5,10,low_color);  // oclock
@@ -255,7 +304,7 @@ void loop() {
       setColor(3,0,9,high_color);   // TWENTYFIVE
     }
     if(minutes==40) {
-      setColor(3,6,9,low_color);    //       five
+      setColor(3,6,9,low_color);    // five
       setColor(3,0,5,high_color);   // TWENTY
     }
     if(minutes==45) {
@@ -273,7 +322,7 @@ void loop() {
       setColor(3,6,9,high_color);   // FIVE
     }
 
-    if(minutes==0||minutes==60) {
+    if((minutes==0)|(minutes==60)) {
       setColor(3,6,9,low_color);    // five
       setColor(4,9,10,low_color);   // to
       setColor(5,0,3,low_color);    // past
